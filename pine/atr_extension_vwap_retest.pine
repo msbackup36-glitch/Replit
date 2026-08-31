@@ -1,19 +1,24 @@
 //@version=6
-// ATR Extension -> VWAP Retest
+// ATR Extension -> VWAP Pullback -> Trend Continuation
+//
+// Trend-continuation setup. The move extends, pulls back COUNTER-TREND to VWAP,
+// then resumes in the original direction. An up extension is a LONG setup.
 //
 // Stage 1 (ARM), during RTH:
 //     market cap >= $500M
 //     RVOL (time-of-day, anchored at the pre-market open) >= 1.5x
 //     price >= 1.00 daily ATR from the opening price
 //     price >= 0.75 daily ATR from VWAP
-// Stage 2 (TRIGGER = the alert), during RTH:
-//     price returns to VWAP
+// Stage 2 (HEADS-UP = the alert), during RTH:
+//     price pulls back to VWAP -> get ready, watch for the resumption
+// Stage 3 (CONFIRMATION), during RTH:
+//     price resumes in the direction of the original move
 //
 // ATR is the prior completed 14-day ATR, fixed for the whole session.
 // VWAP and RVOL both accumulate from the PRE-MARKET open, so the chart must
 // have Extended Hours enabled. The status table shows the live anchor time.
 
-indicator("ATR Extension -> VWAP Retest", "ATR Ext -> VWAP", overlay = true)
+indicator("ATR Ext -> VWAP Pullback -> Continuation", "ATR Ext -> VWAP", overlay = true)
 
 if timeframe.isdwm
     runtime.error("Use an intraday timeframe (1m-15m). Session VWAP is meaningless on daily or higher bars.")
@@ -33,10 +38,19 @@ dirMode  = input.string("Both", "Direction", options = ["Both", "Up extensions",
 grpA = "Anchors"
 openAnchor = input.string("RTH open (09:30)", "Open reference", options = ["RTH open (09:30)", "Pre-market open"], group = grpA)
 
-grpT = "Retest trigger"
-retestMode = input.string("Touch", "Return to VWAP", options = ["Touch", "Close through"], group = grpT)
-maxBars    = input.int(0, "Max bars from arm to retest (0 = no limit)", minval = 0, group = grpT)
-allowRearm = input.bool(false, "Allow re-arm after a trigger", group = grpT)
+grpT = "Stage 2 - VWAP pullback (the alert)"
+retestBuffer = input.float(0.10, "Fire this many ATR before VWAP is reached", minval = 0, step = 0.05, group = grpT)
+maxBarsArm   = input.int(0, "Max bars from arm to pullback (0 = no limit)", minval = 0, group = grpT)
+
+grpC = "Stage 3 - continuation"
+confirmMode = input.string("Break retest extreme", "Confirmation", options = ["Break retest extreme", "Reclaim VWAP"], group = grpC)
+minHold     = input.int(1, "Min bars between pullback and confirmation", minval = 0, group = grpC)
+maxBarsConf = input.int(12, "Give up on the continuation after N bars (0 = never)", minval = 0, group = grpC)
+invalidMult = input.float(0.25, "Invalidate if price closes this many ATR through VWAP", minval = 0, step = 0.05, group = grpC)
+allowRearm  = input.bool(false, "Allow re-arm after a completed setup", group = grpC)
+
+grpAl = "Alerts"
+alertOn = input.string("VWAP pullback only", "alert() fires on", options = ["VWAP pullback only", "Continuation only", "Both"], group = grpAl)
 
 grpD = "Display"
 showBands = input.bool(true, "Draw ATR bands", group = grpD)
@@ -120,50 +134,95 @@ bool gateOK  = inRTH and mcapOK and rvolOK and haveRefs
 bool armUpNow = gateOK and allowUp and openExt >=  openMult and vwapExt >=  vwapMult
 bool armDnNow = gateOK and allowDn and openExt <= -openMult and vwapExt <= -vwapMult
 
-// ──────────────────────────────────────────── Stage 1 -> Stage 2 state ─────
-var int   state   = 0     //  0 = flat, 1 = armed up, -1 = armed down
-var int   armBar  = na
-var float peakExt = na
-var float armRvol = na
-var bool  fired   = false
+// ─────────────────────────────────────────── Stage 1 -> 2 -> 3 state ──────
+//  0 = flat
+//  1 = armed long  (extended up)      2 = pulled back to VWAP, awaiting resumption
+// -1 = armed short (extended down)   -2 = pulled back to VWAP, awaiting resumption
+var int   state      = 0
+var int   armBar     = na
+var int   touchBar   = na
+var float peakExt    = na
+var float armRvol    = na
+var float retestHigh = na
+var float retestLow  = na
+var bool  fired      = false
 
 if newAnchor
-    state   := 0
-    armBar  := na
-    peakExt := na
-    armRvol := na
-    fired   := false
+    state      := 0
+    armBar     := na
+    touchBar   := na
+    peakExt    := na
+    armRvol    := na
+    retestHigh := na
+    retestLow  := na
+    fired      := false
 
+bool pullLong  = false
+bool pullShort = false
+bool confLong  = false
+bool confShort = false
+
+float nearBand  = nz(dATR, 0) * retestBuffer
+float killBand  = nz(dATR, 0) * invalidMult
+
+if state == 1
+    peakExt := math.max(nz(peakExt, vwapExt), vwapExt)
+    if maxBarsArm > 0 and bar_index - nz(armBar, bar_index) > maxBarsArm
+        state := 0
+    else if inRTH and low <= vwap + nearBand
+        state      := 2
+        touchBar   := bar_index
+        retestHigh := high
+        pullLong   := true
+else if state == -1
+    peakExt := math.min(nz(peakExt, vwapExt), vwapExt)
+    if maxBarsArm > 0 and bar_index - nz(armBar, bar_index) > maxBarsArm
+        state := 0
+    else if inRTH and high >= vwap - nearBand
+        state     := -2
+        touchBar  := bar_index
+        retestLow := low
+        pullShort := true
+else if state == 2
+    // Pullback became a breakdown - this is no longer a continuation trade.
+    if close < vwap - killBand
+        state := 0
+    else if maxBarsConf > 0 and bar_index - nz(touchBar, bar_index) > maxBarsConf
+        state := 0
+    else
+        bool cond = confirmMode == "Reclaim VWAP" ? close > vwap : (high > retestHigh and close > vwap)
+        if inRTH and cond and bar_index - nz(touchBar, bar_index) >= minHold
+            confLong := true
+            state    := 0
+            fired    := true
+        retestHigh := math.max(nz(retestHigh, high), high)
+else if state == -2
+    if close > vwap + killBand
+        state := 0
+    else if maxBarsConf > 0 and bar_index - nz(touchBar, bar_index) > maxBarsConf
+        state := 0
+    else
+        bool cond = confirmMode == "Reclaim VWAP" ? close < vwap : (low < retestLow and close < vwap)
+        if inRTH and cond and bar_index - nz(touchBar, bar_index) >= minHold
+            confShort := true
+            state     := 0
+            fired     := true
+        retestLow := math.min(nz(retestLow, low), low)
+
+bool armedNow = false
 if state == 0 and (allowRearm or not fired)
     if armUpNow
         state := 1
         armBar := bar_index
         peakExt := vwapExt
         armRvol := rvol
+        armedNow := true
     else if armDnNow
         state := -1
         armBar := bar_index
         peakExt := vwapExt
         armRvol := rvol
-
-if state == 1
-    peakExt := math.max(nz(peakExt, vwapExt), vwapExt)
-if state == -1
-    peakExt := math.min(nz(peakExt, vwapExt), vwapExt)
-
-bool expired = state != 0 and maxBars > 0 and (bar_index - nz(armBar, bar_index)) > maxBars
-bool backUp  = retestMode == "Touch" ? low  <= vwap : close <= vwap
-bool backDn  = retestMode == "Touch" ? high >= vwap : close >= vwap
-
-bool trigUp = state ==  1 and inRTH and not expired and bar_index > nz(armBar, bar_index) and backUp
-bool trigDn = state == -1 and inRTH and not expired and bar_index > nz(armBar, bar_index) and backDn
-
-float firedPeak = peakExt
-if trigUp or trigDn
-    state := 0
-    fired := true
-else if expired
-    state := 0
+        armedNow := true
 
 // ──────────────────────────────────────────────────────────── Display ─────
 plot(inAnchor ? vwap : na, "VWAP (PM anchored)", color.new(color.orange, 0), 2, plot.style_linebr)
@@ -174,33 +233,57 @@ plot(showBands and inRTH and haveRefs ? openRef - openMult * dATR : na, "Open -A
 plot(showBands and inRTH and haveRefs ? vwap + vwapMult * dATR : na, "VWAP +ATR", color.new(color.purple, 55), 1, plot.style_linebr)
 plot(showBands and inRTH and haveRefs ? vwap - vwapMult * dATR : na, "VWAP -ATR", color.new(color.purple, 55), 1, plot.style_linebr)
 
-// Hollow marker = armed (stage 1). Filled marker = the retest alert (stage 2).
-plotshape(armUpNow and state == 1 and armBar == bar_index, "Armed up",   shape.circle, location.abovebar, color.new(color.teal, 30), size = size.tiny)
-plotshape(armDnNow and state == -1 and armBar == bar_index, "Armed down", shape.circle, location.belowbar, color.new(color.maroon, 30), size = size.tiny)
-plotshape(trigUp, "Up ext -> VWAP retest",   shape.labeldown, location.abovebar, color.new(color.lime, 0), text = "VWAP", textcolor = color.black, size = size.small)
-plotshape(trigDn, "Down ext -> VWAP retest", shape.labelup,   location.belowbar, color.new(color.red,  0), text = "VWAP", textcolor = color.white, size = size.small)
+// Small circle  = stage 1, extended and armed.
+// "VWAP" label   = stage 2, pulled back. THIS IS THE ALERT - get ready.
+// Triangle       = stage 3, continuation confirmed in the original direction.
+plotshape(armedNow and state ==  1, "Armed long",  shape.circle, location.abovebar, color.new(color.teal, 30), size = size.tiny)
+plotshape(armedNow and state == -1, "Armed short", shape.circle, location.belowbar, color.new(color.maroon, 30), size = size.tiny)
+plotshape(pullLong,  "Long setup - pullback to VWAP",  shape.labelup,   location.belowbar, color.new(color.aqua, 0), text = "VWAP", textcolor = color.black, size = size.small)
+plotshape(pullShort, "Short setup - pullback to VWAP", shape.labeldown, location.abovebar, color.new(color.fuchsia, 0), text = "VWAP", textcolor = color.white, size = size.small)
+plotshape(confLong,  "Long continuation confirmed",  shape.triangleup,   location.belowbar, color.new(color.lime, 0), size = size.small)
+plotshape(confShort, "Short continuation confirmed", shape.triangledown, location.abovebar, color.new(color.red,  0), size = size.small)
+
+// Shade the window where a setup is live and you should be watching.
+bgcolor(state ==  2 ? color.new(color.teal, 90) : state == -2 ? color.new(color.maroon, 90) : na, title = "Awaiting continuation")
 
 // Pine Screener / data-window columns
 plot(openExt,                         "Open ATR ext", display = display.data_window)
 plot(vwapExt,                         "VWAP ATR ext", display = display.data_window)
 plot(rvol,                            "RVOL",         display = display.data_window)
 plot(na(mcap) ? na : mcap / 1e6,      "Mkt cap ($M)", display = display.data_window)
-plot(state,                           "Armed",        display = display.data_window)
-plot(trigUp ? 1 : trigDn ? -1 : 0,    "Retest",       display = display.data_window)
+plot(state,                           "State",        display = display.data_window)
+plot(pullLong ? 1 : pullShort ? -1 : 0, "VWAP pullback",  display = display.data_window)
+plot(confLong ? 1 : confShort ? -1 : 0, "Continuation",   display = display.data_window)
 
 // ────────────────────────────────────────────────────────── Alerting ───────
-alertcondition(trigUp, "Up extension returned to VWAP",   "Extended up, now back at VWAP")
-alertcondition(trigDn, "Down extension returned to VWAP", "Extended down, now back at VWAP")
+// Stage 2 - the heads-up. This is the one to put on your watchlist symbols.
+alertcondition(pullLong,  "LONG setup: pullback to VWAP",  "Extended up, now pulled back to VWAP - watch for the resumption higher")
+alertcondition(pullShort, "SHORT setup: pullback to VWAP", "Extended down, now pulled back to VWAP - watch for the resumption lower")
+// Stage 3 - the confirmation, if you would rather be told when it actually goes.
+alertcondition(confLong,  "LONG continuation confirmed",  "Resumed higher off VWAP")
+alertcondition(confShort, "SHORT continuation confirmed", "Resumed lower off VWAP")
 
-if trigUp or trigDn
-    alert(str.format("{0} {1} back at VWAP {2,number,#.####} | peak {3,number,#.##} ATR from VWAP | RVOL {4,number,#.##}x | mcap ${5,number,#}M",
-      syminfo.ticker, trigUp ? "UP EXT" : "DOWN EXT", vwap, firedPeak, nz(armRvol), nz(mcap) / 1e6),
+bool pullAny = pullLong or pullShort
+bool confAny = confLong or confShort
+bool sendPull = pullAny and (alertOn == "VWAP pullback only" or alertOn == "Both")
+bool sendConf = confAny and (alertOn == "Continuation only"  or alertOn == "Both")
+
+if sendPull
+    alert(str.format("{0} {1} SETUP | pulled back to VWAP {2,number,#.####} | peak {3,number,#.##} ATR | RVOL {4,number,#.##}x | mcap ${5,number,#}M | watch for continuation",
+      syminfo.ticker, pullLong ? "LONG" : "SHORT", vwap, nz(peakExt), nz(armRvol), nz(mcap) / 1e6),
+      alert.freq_once_per_bar_close)
+if sendConf
+    alert(str.format("{0} {1} CONTINUATION confirmed at {2,number,#.####} | VWAP {3,number,#.####} | RVOL {4,number,#.##}x",
+      syminfo.ticker, confLong ? "LONG" : "SHORT", close, vwap, nz(rvol)),
       alert.freq_once_per_bar_close)
 
 // ──────────────────────────────────────────────────────── Status table ─────
 var table t = table.new(position.top_right, 2, 8, border_width = 1)
 if showTable and barstate.islast
-    string st = state == 1 ? "ARMED UP" : state == -1 ? "ARMED DOWN" : fired ? "fired" : "flat"
+    string st = state ==  1 ? "ARMED LONG"  : state ==  2 ? "AT VWAP - watch" :
+                state == -1 ? "ARMED SHORT" : state == -2 ? "AT VWAP - watch" :
+                fired ? "done for today" : "flat"
+    color stc = math.abs(state) == 2 ? color.aqua : state != 0 ? color.yellow : color.silver
     table.cell(t, 0, 0, "VWAP anchor", text_color = color.gray, text_size = size.small)
     table.cell(t, 1, 0, na(anchorTime) ? "n/a" : str.format_time(anchorTime, "HH:mm", syminfo.timezone), text_size = size.small)
     table.cell(t, 0, 1, "Daily ATR", text_color = color.gray, text_size = size.small)
@@ -216,4 +299,4 @@ if showTable and barstate.islast
     table.cell(t, 0, 6, "Peak ext", text_color = color.gray, text_size = size.small)
     table.cell(t, 1, 6, na(peakExt) ? "-" : str.tostring(peakExt, "#.##") + " ATR", text_size = size.small)
     table.cell(t, 0, 7, "State", text_color = color.gray, text_size = size.small)
-    table.cell(t, 1, 7, st, text_color = state != 0 ? color.yellow : color.silver, text_size = size.small)
+    table.cell(t, 1, 7, st, text_color = stc, text_size = size.small)
