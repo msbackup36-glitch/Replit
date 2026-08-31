@@ -1,41 +1,45 @@
-# ATR Extension — RTH
+# TradingView scanners
 
-A TradingView (Pine v6) indicator that flags stocks stretched a minimum number of
-**daily ATRs** away from both the regular-session **opening price** and the
-regular-session **VWAP**, long or short, above a market-cap floor.
+## `atr_extension_vwap_retest.pine` — current version
 
-## Requirements implemented
+Two-stage setup.
 
-| # | Requirement | How |
-|---|---|---|
-| 1 | RTH only | `session.ismarket`, or a custom `0930-1600` session string |
-| 2 | Min $500M market cap | `TOTAL_SHARES_OUTSTANDING` (FQ) x price |
-| 3 | Long or short | Symmetric conditions, with a direction selector |
-| 4 | Min 1 ATR from the open | `(close - rthOpen) / dailyATR` |
-| 5 | Min 0.75 ATR from VWAP | `(close - rthVwap) / dailyATR` |
+**Stage 1 — arm** (regular trading hours only):
 
-## Design decisions
+| Gate | Default |
+|---|---|
+| Market cap | >= $500M |
+| RVOL, time-of-day, anchored at the pre-market open | >= 1.5x |
+| Extension from the opening price | >= 1.00 daily ATR |
+| Extension from VWAP | >= 0.75 daily ATR |
 
-- **ATR = previous completed daily ATR(14)**, fetched with a `[1]` offset so the
-  value is fixed for the whole session and never repaints. Intraday ATR would
-  produce a far smaller, constantly-moving yardstick.
-- **VWAP is anchored to the 09:30 RTH open**, not to the extended-hours session
-  start, so the number matches what a day trader reads off an RTH chart.
-- **Direction is consistent**: a long signal needs price above *both* references;
-  a short needs it below both.
-- **One signal per session** by default, so alerts do not repeat all afternoon.
+**Stage 2 — trigger (the alert):** price returns to VWAP, still within RTH.
 
-## Timeframe
+### Anchors
 
-Must be run **intraday** (1m–15m). Session VWAP resets every day, so on a daily
-or higher chart it collapses to that bar's own average price and requirement 5
-becomes meaningless.
+- **ATR** — prior completed 14-day ATR, fetched with a `[1]` offset so it is
+  fixed for the whole session and never repaints.
+- **VWAP** — accumulates from the **pre-market open (04:00)**.
+  Requires Extended Hours enabled on the chart. The status table shows the live
+  anchor time so you can confirm you are getting 04:00 and not 09:30.
+- **Open** — the **09:30 RTH open** by default; switchable to the PM open.
+- **RVOL** — cumulative volume since the PM open divided by the average
+  cumulative volume at the same slot within the session over the prior 20
+  sessions. Sessions that never reached that slot (half days, holidays) are
+  excluded rather than counted as zero.
 
-## Usage
+### Timeframe
 
-1. Pine Editor -> paste `atr_extension_rth.pine` -> Save -> Add to chart.
-2. Set the chart to 5m and confirm the status table populates.
-3. Right-click the plot -> Add alert, condition = the indicator.
+Intraday only (1m-15m). The script raises a runtime error on daily or higher,
+because session VWAP collapses to that bar's own average price.
 
-For scanning, prefilter with the built-in Screener (Market cap >= 500M, average
-volume) and save the result as a watchlist, then run this indicator over it.
+### Reading the chart
+
+- Small hollow circle — armed (stage 1 conditions met).
+- `VWAP` label — the retest fired. This is the alert.
+- Teal bands: open +/- 1 ATR. Purple bands: VWAP +/- 0.75 ATR.
+
+## `atr_extension_rth.pine` — superseded
+
+Single-stage version that alerts on the extension itself, with an RTH-anchored
+VWAP and no RVOL gate. Kept for reference.

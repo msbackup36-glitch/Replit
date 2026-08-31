@@ -1,0 +1,219 @@
+//@version=6
+// ATR Extension -> VWAP Retest
+//
+// Stage 1 (ARM), during RTH:
+//     market cap >= $500M
+//     RVOL (time-of-day, anchored at the pre-market open) >= 1.5x
+//     price >= 1.00 daily ATR from the opening price
+//     price >= 0.75 daily ATR from VWAP
+// Stage 2 (TRIGGER = the alert), during RTH:
+//     price returns to VWAP
+//
+// ATR is the prior completed 14-day ATR, fixed for the whole session.
+// VWAP and RVOL both accumulate from the PRE-MARKET open, so the chart must
+// have Extended Hours enabled. The status table shows the live anchor time.
+
+indicator("ATR Extension -> VWAP Retest", "ATR Ext -> VWAP", overlay = true)
+
+if timeframe.isdwm
+    runtime.error("Use an intraday timeframe (1m-15m). Session VWAP is meaningless on daily or higher bars.")
+
+// ─────────────────────────────────────────────────────────── Inputs ────────
+grpF = "Filters"
+atrLen   = input.int(14, "Daily ATR length", minval = 1, group = grpF)
+openMult = input.float(1.00, "Min ATR extension from open", minval = 0, step = 0.05, group = grpF)
+vwapMult = input.float(0.75, "Min ATR extension from VWAP", minval = 0, step = 0.05, group = grpF)
+useMcap  = input.bool(true, "Require minimum market cap", group = grpF)
+minMcapM = input.float(500, "Min market cap ($M)", minval = 0, step = 50, group = grpF)
+useRvol  = input.bool(true, "Require minimum RVOL", group = grpF)
+minRvol  = input.float(1.5, "Min RVOL (time-of-day)", minval = 0, step = 0.1, group = grpF)
+rvolDays = input.int(20, "RVOL lookback (sessions)", minval = 2, maxval = 30, group = grpF)
+dirMode  = input.string("Both", "Direction", options = ["Both", "Up extensions", "Down extensions"], group = grpF)
+
+grpA = "Anchors"
+openAnchor = input.string("RTH open (09:30)", "Open reference", options = ["RTH open (09:30)", "Pre-market open"], group = grpA)
+
+grpT = "Retest trigger"
+retestMode = input.string("Touch", "Return to VWAP", options = ["Touch", "Close through"], group = grpT)
+maxBars    = input.int(0, "Max bars from arm to retest (0 = no limit)", minval = 0, group = grpT)
+allowRearm = input.bool(false, "Allow re-arm after a trigger", group = grpT)
+
+grpD = "Display"
+showBands = input.bool(true, "Draw ATR bands", group = grpD)
+showTable = input.bool(true, "Show status table", group = grpD)
+
+float minMcap = minMcapM * 1e6
+
+// ────────────────────────────────────────────────── Session detection ──────
+bool inRTH    = session.ismarket
+bool inAnchor = session.ispremarket or session.ismarket   // 04:00 -> 16:00
+bool newDay   = timeframe.change("D")
+bool newAnchor = inAnchor and (nz(inAnchor[1] ? 1 : 0, 0) == 0 or newDay)
+bool newRTH    = inRTH    and (nz(inRTH[1]    ? 1 : 0, 0) == 0 or newDay)
+
+// ───────────────────────────────────────── Anchored VWAP + time-of-day RVOL ─
+int maxSlots = math.max(2, int(math.ceil(86400.0 / timeframe.in_seconds())))
+var matrix<float> hist   = matrix.new<float>(maxSlots, rvolDays, na)
+var array<int>    colMax = array.new_int(rvolDays, -1)
+
+var float cumPV      = na
+var float cumVol     = na
+var float pmOpen     = na
+var int   anchorTime = na
+var int   slot       = -1
+var int   col        = -1
+
+if newAnchor
+    cumPV      := 0.0
+    cumVol     := 0.0
+    pmOpen     := open
+    anchorTime := time
+    slot       := 0
+    col        := (col + 1) % rvolDays
+    array.set(colMax, col, -1)
+else if inAnchor
+    slot := slot + 1
+
+float avgCum = na
+if inAnchor
+    cumPV  := nz(cumPV)  + hlc3 * nz(volume)
+    cumVol := nz(cumVol) + nz(volume)
+    if slot >= 0 and slot < maxSlots
+        // Average prior sessions' cumulative volume at THIS slot, skipping any
+        // session that never reached it (half days, holidays).
+        float s = 0.0
+        int   n = 0
+        for j = 0 to rvolDays - 1
+            if j != col and array.get(colMax, j) >= slot
+                float v = matrix.get(hist, slot, j)
+                if not na(v)
+                    s += v
+                    n += 1
+        avgCum := n > 0 ? s / n : na
+        matrix.set(hist, slot, col, cumVol)
+        array.set(colMax, col, slot)
+
+float vwap   = nz(cumVol, 0) > 0 ? cumPV / cumVol : na
+float rvol   = na(avgCum) or avgCum <= 0 ? na : cumVol / avgCum
+bool  rvolOK = not useRvol or (not na(rvol) and rvol >= minRvol)
+
+var float rthOpen = na
+if newRTH
+    rthOpen := open
+
+// ──────────────────────────────────────── Daily ATR + market cap gates ─────
+float dATR   = request.security(syminfo.tickerid, "D", ta.atr(atrLen)[1], lookahead = barmerge.lookahead_on)
+float shares = request.financial(syminfo.tickerid, "TOTAL_SHARES_OUTSTANDING", "FQ", ignore_invalid_symbol = true)
+float mcap   = na(shares) ? na : shares * close
+bool  mcapOK = not useMcap or (not na(mcap) and mcap >= minMcap)
+
+// ────────────────────────────────────────────────────────── Extension ──────
+float openRef  = openAnchor == "Pre-market open" ? pmOpen : rthOpen
+bool  haveRefs = not na(openRef) and not na(vwap) and not na(dATR) and dATR > 0
+float openExt  = haveRefs ? (close - openRef) / dATR : na
+float vwapExt  = haveRefs ? (close - vwap)    / dATR : na
+
+bool allowUp = dirMode != "Down extensions"
+bool allowDn = dirMode != "Up extensions"
+bool gateOK  = inRTH and mcapOK and rvolOK and haveRefs
+
+bool armUpNow = gateOK and allowUp and openExt >=  openMult and vwapExt >=  vwapMult
+bool armDnNow = gateOK and allowDn and openExt <= -openMult and vwapExt <= -vwapMult
+
+// ──────────────────────────────────────────── Stage 1 -> Stage 2 state ─────
+var int   state   = 0     //  0 = flat, 1 = armed up, -1 = armed down
+var int   armBar  = na
+var float peakExt = na
+var float armRvol = na
+var bool  fired   = false
+
+if newAnchor
+    state   := 0
+    armBar  := na
+    peakExt := na
+    armRvol := na
+    fired   := false
+
+if state == 0 and (allowRearm or not fired)
+    if armUpNow
+        state := 1
+        armBar := bar_index
+        peakExt := vwapExt
+        armRvol := rvol
+    else if armDnNow
+        state := -1
+        armBar := bar_index
+        peakExt := vwapExt
+        armRvol := rvol
+
+if state == 1
+    peakExt := math.max(nz(peakExt, vwapExt), vwapExt)
+if state == -1
+    peakExt := math.min(nz(peakExt, vwapExt), vwapExt)
+
+bool expired = state != 0 and maxBars > 0 and (bar_index - nz(armBar, bar_index)) > maxBars
+bool backUp  = retestMode == "Touch" ? low  <= vwap : close <= vwap
+bool backDn  = retestMode == "Touch" ? high >= vwap : close >= vwap
+
+bool trigUp = state ==  1 and inRTH and not expired and bar_index > nz(armBar, bar_index) and backUp
+bool trigDn = state == -1 and inRTH and not expired and bar_index > nz(armBar, bar_index) and backDn
+
+float firedPeak = peakExt
+if trigUp or trigDn
+    state := 0
+    fired := true
+else if expired
+    state := 0
+
+// ──────────────────────────────────────────────────────────── Display ─────
+plot(inAnchor ? vwap : na, "VWAP (PM anchored)", color.new(color.orange, 0), 2, plot.style_linebr)
+plot(inRTH ? openRef : na, "Open reference", color.new(color.gray, 20), 1, plot.style_linebr)
+
+plot(showBands and inRTH and haveRefs ? openRef + openMult * dATR : na, "Open +ATR", color.new(color.teal, 45), 1, plot.style_linebr)
+plot(showBands and inRTH and haveRefs ? openRef - openMult * dATR : na, "Open -ATR", color.new(color.teal, 45), 1, plot.style_linebr)
+plot(showBands and inRTH and haveRefs ? vwap + vwapMult * dATR : na, "VWAP +ATR", color.new(color.purple, 55), 1, plot.style_linebr)
+plot(showBands and inRTH and haveRefs ? vwap - vwapMult * dATR : na, "VWAP -ATR", color.new(color.purple, 55), 1, plot.style_linebr)
+
+// Hollow marker = armed (stage 1). Filled marker = the retest alert (stage 2).
+plotshape(armUpNow and state == 1 and armBar == bar_index, "Armed up",   shape.circle, location.abovebar, color.new(color.teal, 30), size = size.tiny)
+plotshape(armDnNow and state == -1 and armBar == bar_index, "Armed down", shape.circle, location.belowbar, color.new(color.maroon, 30), size = size.tiny)
+plotshape(trigUp, "Up ext -> VWAP retest",   shape.labeldown, location.abovebar, color.new(color.lime, 0), text = "VWAP", textcolor = color.black, size = size.small)
+plotshape(trigDn, "Down ext -> VWAP retest", shape.labelup,   location.belowbar, color.new(color.red,  0), text = "VWAP", textcolor = color.white, size = size.small)
+
+// Pine Screener / data-window columns
+plot(openExt,                         "Open ATR ext", display = display.data_window)
+plot(vwapExt,                         "VWAP ATR ext", display = display.data_window)
+plot(rvol,                            "RVOL",         display = display.data_window)
+plot(na(mcap) ? na : mcap / 1e6,      "Mkt cap ($M)", display = display.data_window)
+plot(state,                           "Armed",        display = display.data_window)
+plot(trigUp ? 1 : trigDn ? -1 : 0,    "Retest",       display = display.data_window)
+
+// ────────────────────────────────────────────────────────── Alerting ───────
+alertcondition(trigUp, "Up extension returned to VWAP",   "Extended up, now back at VWAP")
+alertcondition(trigDn, "Down extension returned to VWAP", "Extended down, now back at VWAP")
+
+if trigUp or trigDn
+    alert(str.format("{0} {1} back at VWAP {2,number,#.####} | peak {3,number,#.##} ATR from VWAP | RVOL {4,number,#.##}x | mcap ${5,number,#}M",
+      syminfo.ticker, trigUp ? "UP EXT" : "DOWN EXT", vwap, firedPeak, nz(armRvol), nz(mcap) / 1e6),
+      alert.freq_once_per_bar_close)
+
+// ──────────────────────────────────────────────────────── Status table ─────
+var table t = table.new(position.top_right, 2, 8, border_width = 1)
+if showTable and barstate.islast
+    string st = state == 1 ? "ARMED UP" : state == -1 ? "ARMED DOWN" : fired ? "fired" : "flat"
+    table.cell(t, 0, 0, "VWAP anchor", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 0, na(anchorTime) ? "n/a" : str.format_time(anchorTime, "HH:mm", syminfo.timezone), text_size = size.small)
+    table.cell(t, 0, 1, "Daily ATR", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 1, na(dATR) ? "n/a" : str.tostring(dATR, format.mintick), text_size = size.small)
+    table.cell(t, 0, 2, "Mkt cap $M", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 2, na(mcap) ? "n/a" : str.tostring(mcap / 1e6, "#"), text_color = mcapOK ? color.lime : color.red, text_size = size.small)
+    table.cell(t, 0, 3, "RVOL", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 3, na(rvol) ? "n/a" : str.tostring(rvol, "#.##") + "x", text_color = rvolOK ? color.lime : color.red, text_size = size.small)
+    table.cell(t, 0, 4, "Open ext", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 4, na(openExt) ? "n/a" : str.tostring(openExt, "#.##") + " ATR", text_color = math.abs(nz(openExt)) >= openMult ? color.lime : color.silver, text_size = size.small)
+    table.cell(t, 0, 5, "VWAP ext", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 5, na(vwapExt) ? "n/a" : str.tostring(vwapExt, "#.##") + " ATR", text_color = math.abs(nz(vwapExt)) >= vwapMult ? color.lime : color.silver, text_size = size.small)
+    table.cell(t, 0, 6, "Peak ext", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 6, na(peakExt) ? "-" : str.tostring(peakExt, "#.##") + " ATR", text_size = size.small)
+    table.cell(t, 0, 7, "State", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 7, st, text_color = state != 0 ? color.yellow : color.silver, text_size = size.small)
