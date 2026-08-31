@@ -1,0 +1,137 @@
+//@version=6
+// ATR Extension — RTH
+// Flags stocks that are stretched a minimum number of daily ATRs away from
+// BOTH the regular-session opening price AND the regular-session VWAP.
+//
+//   1. RTH only            - signals are suppressed outside regular trading hours
+//   2. Market cap gate     - default $500M minimum
+//   3. Long and short      - symmetric, either side
+//   4. >= 1.00 ATR from the RTH open
+//   5. >= 0.75 ATR from the RTH VWAP
+//
+// "ATR" here means the PREVIOUS COMPLETED DAILY ATR, which is what traders
+// normally mean by "1 ATR extension". It is fetched with a [1] offset so the
+// value never repaints intraday.
+
+indicator("ATR Extension - RTH", "ATR Ext", overlay = true)
+
+// ─────────────────────────────────────────────────────────── Inputs ────────
+grpF = "Filters"
+atrLen   = input.int(14, "Daily ATR length", minval = 1, group = grpF)
+openMult = input.float(1.00, "Min ATR extension from RTH open", minval = 0, step = 0.05, group = grpF)
+vwapMult = input.float(0.75, "Min ATR extension from RTH VWAP", minval = 0, step = 0.05, group = grpF)
+useMcap  = input.bool(true, "Require minimum market cap", group = grpF)
+minMcapM = input.float(500, "Min market cap ($M)", minval = 0, step = 50, group = grpF)
+dirMode  = input.string("Both", "Direction", options = ["Both", "Long only", "Short only"], group = grpF)
+
+grpS = "Session"
+useAutoSession = input.bool(true, "Use the symbol's own regular session", group = grpS)
+customSess     = input.session("0930-1600", "Custom session", group = grpS)
+customTz       = input.string("America/New_York", "Session timezone", group = grpS)
+
+grpA = "Behaviour"
+oncePerSession = input.bool(true, "Only first trigger per session", group = grpA)
+showBands      = input.bool(true, "Draw ATR bands", group = grpA)
+showTable      = input.bool(true, "Show status table", group = grpA)
+
+float minMcap = minMcapM * 1e6
+
+// ────────────────────────────────────────────────── Session detection ──────
+bool inRTH   = useAutoSession ? session.ismarket : not na(time(timeframe.period, customSess, customTz))
+int  rthFlag = inRTH ? 1 : 0
+bool newDay  = timeframe.change("D")
+// Fires on the 09:30 bar whether or not extended hours are displayed.
+bool newRTH  = inRTH and (nz(rthFlag[1], 0) == 0 or newDay)
+
+// ─────────────────────────────────────────────────────── RTH anchors ───────
+var float rthOpen = na
+if newRTH
+    rthOpen := open
+
+// VWAP anchored to the RTH open, not to the extended-hours session start.
+var float cumPV  = na
+var float cumVol = na
+if newRTH
+    cumPV  := 0.0
+    cumVol := 0.0
+if inRTH
+    cumPV  := nz(cumPV)  + hlc3 * nz(volume)
+    cumVol := nz(cumVol) + nz(volume)
+float rthVwap = nz(cumVol, 0) > 0 ? cumPV / cumVol : na
+
+// ──────────────────────────────────────────────────── Daily ATR (fixed) ────
+// [1] + lookahead_on = yesterday's completed ATR, constant all day, no repaint.
+float dATR = request.security(syminfo.tickerid, "D", ta.atr(atrLen)[1], lookahead = barmerge.lookahead_on)
+
+// ───────────────────────────────────────────────────────── Market cap ──────
+float shares  = request.financial(syminfo.tickerid, "TOTAL_SHARES_OUTSTANDING", "FQ", ignore_invalid_symbol = true)
+float mcap    = na(shares) ? na : shares * close
+bool  mcapOK  = not useMcap or (not na(mcap) and mcap >= minMcap)
+
+// ────────────────────────────────────────────────────────── Extension ──────
+bool  haveRefs = not na(rthOpen) and not na(rthVwap) and not na(dATR) and dATR > 0
+float openExt  = haveRefs ? (close - rthOpen) / dATR : na
+float vwapExt  = haveRefs ? (close - rthVwap) / dATR : na
+
+bool allowLong  = dirMode != "Short only"
+bool allowShort = dirMode != "Long only"
+bool baseOK     = inRTH and mcapOK and haveRefs
+
+bool longRaw  = baseOK and allowLong  and openExt >=  openMult and vwapExt >=  vwapMult
+bool shortRaw = baseOK and allowShort and openExt <= -openMult and vwapExt <= -vwapMult
+
+var bool firedLong  = false
+var bool firedShort = false
+if newRTH
+    firedLong  := false
+    firedShort := false
+
+bool longSig  = longRaw  and (not oncePerSession or not firedLong)
+bool shortSig = shortRaw and (not oncePerSession or not firedShort)
+if longSig
+    firedLong := true
+if shortSig
+    firedShort := true
+
+// ──────────────────────────────────────────────────────────── Display ──────
+plot(inRTH ? rthVwap : na, "RTH VWAP", color.new(color.orange, 0), 2, plot.style_linebr)
+plot(inRTH ? rthOpen : na, "RTH open", color.new(color.gray, 20), 1, plot.style_linebr)
+
+plot(showBands and inRTH and haveRefs ? rthOpen + openMult * dATR : na, "Open +ATR", color.new(color.teal, 45), 1, plot.style_linebr)
+plot(showBands and inRTH and haveRefs ? rthOpen - openMult * dATR : na, "Open -ATR", color.new(color.teal, 45), 1, plot.style_linebr)
+plot(showBands and inRTH and haveRefs ? rthVwap + vwapMult * dATR : na, "VWAP +ATR", color.new(color.purple, 55), 1, plot.style_linebr)
+plot(showBands and inRTH and haveRefs ? rthVwap - vwapMult * dATR : na, "VWAP -ATR", color.new(color.purple, 55), 1, plot.style_linebr)
+
+plotshape(longSig,  "Long extension",  shape.triangleup,   location.belowbar, color.new(color.lime, 0), size = size.small)
+plotshape(shortSig, "Short extension", shape.triangledown, location.abovebar, color.new(color.red,  0), size = size.small)
+
+// Numeric outputs — these become the selectable columns in the Pine Screener.
+plot(openExt,                            "Open ATR ext",  display = display.data_window)
+plot(vwapExt,                            "VWAP ATR ext",  display = display.data_window)
+plot(na(mcap) ? na : mcap / 1e6,         "Mkt cap ($M)",  display = display.data_window)
+plot(longSig ? 1 : shortSig ? -1 : 0,    "Signal",        display = display.data_window)
+
+// ────────────────────────────────────────────────────────── Alerting ───────
+alertcondition(longSig,  "Long ATR extension",  "Extended above RTH open and VWAP")
+alertcondition(shortSig, "Short ATR extension", "Extended below RTH open and VWAP")
+
+if longSig or shortSig
+    alert(str.format("{0} {1} | open {2,number,#.##} ATR | vwap {3,number,#.##} ATR | mcap ${4,number,#} M",
+      syminfo.ticker, longSig ? "LONG EXT" : "SHORT EXT", openExt, vwapExt, nz(mcap) / 1e6),
+      alert.freq_once_per_bar_close)
+
+// ──────────────────────────────────────────────────────── Status table ─────
+var table t = table.new(position.top_right, 2, 6, border_width = 1)
+if showTable and barstate.islast
+    table.cell(t, 0, 0, "Daily ATR",    text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 0, na(dATR) ? "n/a" : str.tostring(dATR, format.mintick), text_size = size.small)
+    table.cell(t, 0, 1, "Mkt cap $M",   text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 1, na(mcap) ? "n/a" : str.tostring(mcap / 1e6, "#"), text_color = mcapOK ? color.lime : color.red, text_size = size.small)
+    table.cell(t, 0, 2, "RTH open",     text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 2, na(rthOpen) ? "n/a" : str.tostring(rthOpen, format.mintick), text_size = size.small)
+    table.cell(t, 0, 3, "RTH VWAP",     text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 3, na(rthVwap) ? "n/a" : str.tostring(rthVwap, format.mintick), text_size = size.small)
+    table.cell(t, 0, 4, "Open ext",     text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 4, na(openExt) ? "n/a" : str.tostring(openExt, "#.##") + " ATR", text_color = math.abs(nz(openExt)) >= openMult ? color.lime : color.silver, text_size = size.small)
+    table.cell(t, 0, 5, "VWAP ext",     text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 5, na(vwapExt) ? "n/a" : str.tostring(vwapExt, "#.##") + " ATR", text_color = math.abs(nz(vwapExt)) >= vwapMult ? color.lime : color.silver, text_size = size.small)
