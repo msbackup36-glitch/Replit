@@ -7,7 +7,7 @@ VWAP, then resumes in the original direction. An up extension is a LONG setup.
 
 | Stage | What happens | Marker |
 |---|---|---|
-| 1 — Arm | mcap >= $500M, RVOL >= 1.5x, >= 1.00 ATR from the open, >= 0.75 ATR from VWAP | small circle |
+| 1 — Arm | size gate, RVOL >= 1.5x, >= 1.00 ATR from the open, >= 0.75 ATR from VWAP | small circle |
 | 2 — Pullback | price returns to VWAP against the trend — **this is the alert** | `VWAP` label + shaded background |
 | 3 — Confirmation | price resumes in the direction of the original move | triangle |
 
@@ -28,6 +28,25 @@ rather be told when it actually goes.
 A pullback that keeps going is not a continuation trade. The setup is cancelled
 if price closes more than 0.25 ATR through VWAP against the trend, or if the
 continuation has not appeared within 12 bars.
+
+### Stocks and ETFs
+
+ETFs have no shares-outstanding data in Pine, so market cap is unavailable for
+them, and AUM is not exposed either. The size gate therefore switches on data
+availability rather than on `syminfo.type`, which can misclassify:
+
+| Instrument | Gate | Default |
+|---|---|---|
+| Stock (fundamentals present) | market cap | >= $500M |
+| ETF / fund (no fundamentals) | avg daily dollar volume, prior 20 days | >= $25M |
+
+`Size gate` can be forced to market cap only, dollar volume only, or off.
+`Instruments` restricts to stocks only or ETFs only. The status table relabels
+its size row to show which gate actually applied to the symbol on screen.
+
+Note that broad-index ETFs rarely travel a full daily ATR from the open, so in
+practice this fires on leveraged and single-sector funds far more than on SPY
+or QQQ.
 
 ### Anchors
 

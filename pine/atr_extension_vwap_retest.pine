@@ -28,8 +28,11 @@ grpF = "Filters"
 atrLen   = input.int(14, "Daily ATR length", minval = 1, group = grpF)
 openMult = input.float(1.00, "Min ATR extension from open", minval = 0, step = 0.05, group = grpF)
 vwapMult = input.float(0.75, "Min ATR extension from VWAP", minval = 0, step = 0.05, group = grpF)
-useMcap  = input.bool(true, "Require minimum market cap", group = grpF)
-minMcapM = input.float(500, "Min market cap ($M)", minval = 0, step = 50, group = grpF)
+instMode = input.string("Stocks and ETFs", "Instruments", options = ["Stocks and ETFs", "Stocks only", "ETFs only"], group = grpF)
+sizeMode = input.string("Auto", "Size gate", options = ["Auto", "Market cap only", "Dollar volume only", "Off"], group = grpF)
+minMcapM = input.float(500, "Min market cap ($M) - stocks", minval = 0, step = 50, group = grpF)
+minDolM  = input.float(25, "Min avg daily $ volume ($M) - ETFs", minval = 0, step = 5, group = grpF)
+dvLen    = input.int(20, "Avg $ volume lookback (days)", minval = 1, group = grpF)
 useRvol  = input.bool(true, "Require minimum RVOL", group = grpF)
 minRvol  = input.float(1.5, "Min RVOL (time-of-day)", minval = 0, step = 0.1, group = grpF)
 rvolDays = input.int(20, "RVOL lookback (sessions)", minval = 2, maxval = 30, group = grpF)
@@ -57,6 +60,7 @@ showBands = input.bool(true, "Draw ATR bands", group = grpD)
 showTable = input.bool(true, "Show status table", group = grpD)
 
 float minMcap = minMcapM * 1e6
+float minDol   = minDolM * 1e6
 
 // ────────────────────────────────────────────────── Session detection ──────
 bool inRTH    = session.ismarket
@@ -115,11 +119,29 @@ var float rthOpen = na
 if newRTH
     rthOpen := open
 
-// ──────────────────────────────────────── Daily ATR + market cap gates ─────
+// ───────────────────────────────── Daily ATR + size / instrument gates ─────
 float dATR   = request.security(syminfo.tickerid, "D", ta.atr(atrLen)[1], lookahead = barmerge.lookahead_on)
+
+// ETFs have no shares-outstanding data, so market cap is unavailable for them.
+// AUM is not exposed to Pine either, so liquidity stands in: average daily
+// dollar volume over the prior N completed days.
 float shares = request.financial(syminfo.tickerid, "TOTAL_SHARES_OUTSTANDING", "FQ", ignore_invalid_symbol = true)
 float mcap   = na(shares) ? na : shares * close
-bool  mcapOK = not useMcap or (not na(mcap) and mcap >= minMcap)
+float advDol = request.security(syminfo.tickerid, "D", ta.sma(close * volume, dvLen)[1], lookahead = barmerge.lookahead_on)
+
+// Fall back on data availability rather than on syminfo.type, so a fund that
+// TradingView classifies unusually is still gated on something real.
+bool hasFund = not na(mcap)
+bool isFund  = syminfo.type == "fund"
+bool typeOK  = instMode == "Stocks and ETFs" ? true : instMode == "ETFs only" ? isFund : not isFund
+
+bool capPass = not na(mcap)   and mcap   >= minMcap
+bool dolPass = not na(advDol) and advDol >= minDol
+bool sizeOK  = sizeMode == "Off"                ? true :
+               sizeMode == "Market cap only"    ? capPass :
+               sizeMode == "Dollar volume only" ? dolPass :
+               hasFund ? capPass : dolPass
+bool usingDol = sizeMode == "Dollar volume only" or (sizeMode == "Auto" and not hasFund)
 
 // ────────────────────────────────────────────────────────── Extension ──────
 float openRef  = openAnchor == "Pre-market open" ? pmOpen : rthOpen
@@ -129,7 +151,7 @@ float vwapExt  = haveRefs ? (close - vwap)    / dATR : na
 
 bool allowUp = dirMode != "Down extensions"
 bool allowDn = dirMode != "Up extensions"
-bool gateOK  = inRTH and mcapOK and rvolOK and haveRefs
+bool gateOK  = inRTH and typeOK and sizeOK and rvolOK and haveRefs
 
 bool armUpNow = gateOK and allowUp and openExt >=  openMult and vwapExt >=  vwapMult
 bool armDnNow = gateOK and allowDn and openExt <= -openMult and vwapExt <= -vwapMult
@@ -251,6 +273,7 @@ plot(openExt,                         "Open ATR ext", display = display.data_win
 plot(vwapExt,                         "VWAP ATR ext", display = display.data_window)
 plot(rvol,                            "RVOL",         display = display.data_window)
 plot(na(mcap) ? na : mcap / 1e6,      "Mkt cap ($M)", display = display.data_window)
+plot(na(advDol) ? na : advDol / 1e6,   "Avg $vol ($M)", display = display.data_window)
 plot(state,                           "State",        display = display.data_window)
 plot(pullLong ? 1 : pullShort ? -1 : 0, "VWAP pullback",  display = display.data_window)
 plot(confLong ? 1 : confShort ? -1 : 0, "Continuation",   display = display.data_window)
@@ -269,8 +292,9 @@ bool sendPull = pullAny and (alertOn == "VWAP pullback only" or alertOn == "Both
 bool sendConf = confAny and (alertOn == "Continuation only"  or alertOn == "Both")
 
 if sendPull
-    alert(str.format("{0} {1} SETUP | pulled back to VWAP {2,number,#.####} | peak {3,number,#.##} ATR | RVOL {4,number,#.##}x | mcap ${5,number,#}M | watch for continuation",
-      syminfo.ticker, pullLong ? "LONG" : "SHORT", vwap, nz(peakExt), nz(armRvol), nz(mcap) / 1e6),
+    alert(str.format("{0} {1} SETUP | pulled back to VWAP {2,number,#.####} | peak {3,number,#.##} ATR | RVOL {4,number,#.##}x | {5} | watch for continuation",
+      syminfo.ticker, pullLong ? "LONG" : "SHORT", vwap, nz(peakExt), nz(armRvol),
+      usingDol ? str.format("$vol ${0,number,#}M", nz(advDol) / 1e6) : str.format("mcap ${0,number,#}M", nz(mcap) / 1e6)),
       alert.freq_once_per_bar_close)
 if sendConf
     alert(str.format("{0} {1} CONTINUATION confirmed at {2,number,#.####} | VWAP {3,number,#.####} | RVOL {4,number,#.##}x",
@@ -288,8 +312,9 @@ if showTable and barstate.islast
     table.cell(t, 1, 0, na(anchorTime) ? "n/a" : str.format_time(anchorTime, "HH:mm", syminfo.timezone), text_size = size.small)
     table.cell(t, 0, 1, "Daily ATR", text_color = color.gray, text_size = size.small)
     table.cell(t, 1, 1, na(dATR) ? "n/a" : str.tostring(dATR, format.mintick), text_size = size.small)
-    table.cell(t, 0, 2, "Mkt cap $M", text_color = color.gray, text_size = size.small)
-    table.cell(t, 1, 2, na(mcap) ? "n/a" : str.tostring(mcap / 1e6, "#"), text_color = mcapOK ? color.lime : color.red, text_size = size.small)
+    table.cell(t, 0, 2, usingDol ? "Avg $vol M" : "Mkt cap $M", text_color = color.gray, text_size = size.small)
+    float sizeVal = usingDol ? advDol : mcap
+    table.cell(t, 1, 2, na(sizeVal) ? "n/a" : str.tostring(sizeVal / 1e6, "#"), text_color = sizeOK ? color.lime : color.red, text_size = size.small)
     table.cell(t, 0, 3, "RVOL", text_color = color.gray, text_size = size.small)
     table.cell(t, 1, 3, na(rvol) ? "n/a" : str.tostring(rvol, "#.##") + "x", text_color = rvolOK ? color.lime : color.red, text_size = size.small)
     table.cell(t, 0, 4, "Open ext", text_color = color.gray, text_size = size.small)
