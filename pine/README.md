@@ -68,12 +68,16 @@ Evaluated live during the pre-market session:
 
 | Condition | Long | Short |
 |---|---|---|
-| Gap from prior RTH close | >= +3% | <= -3% |
-| Price vs VWAP anchored at the 04:00 PM open | above | below |
+| Move from the 04:00 PM open | >= +3% | <= -3% |
+| Price vs VWAP anchored at the same 04:00 open | above | below |
 | Price vs prior day RTH high / low | above high | below low |
 | Price | >= $1 | >= $1 |
 | Avg volume, 10d, regular session | >= 1M | >= 1M |
 | Pre-market volume | >= 50K | >= 50K |
+
+Both the move and the VWAP are anchored at the 04:00 pre-market open, so the
+overnight and after-hours move is excluded by construction — this measures what
+is happening in the pre-market session itself.
 
 Set `Direction` to Short to mirror every condition at once. Requires Extended
 Hours enabled on the chart, and an intraday timeframe.
@@ -86,8 +90,8 @@ qualify tells you which condition it failed rather than just staying silent.
 The built-in TradingView screener compares a field to a constant, never to
 another field. `price > VWAP` and `price > prior day high` are both field-to-
 field comparisons, and VWAP is not a built-in screener column at all. So the
-built-in screener does the coarse net it can express (gap %, price, average
-volume, market cap, pre-market volume) and this script applies the rest.
+built-in screener does the coarse net it can express (price, average volume,
+market cap, pre-market volume) and this script applies the rest.
 
 ## `atr_extension_rth.pine` — superseded
 
