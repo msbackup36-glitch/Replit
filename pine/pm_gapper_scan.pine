@@ -34,7 +34,7 @@ scanIn   = input.string("Pre-market only", "Evaluate during", options = ["Pre-ma
 
 grpL = "Liquidity"
 minPrice  = input.float(1.0, "Min price ($)", minval = 0, step = 0.5, group = grpL)
-minAvgVolM = input.float(1.0, "Min avg RTH volume, 10d ($M shares)", minval = 0, step = 0.5, group = grpL)
+minAvgVolM = input.float(1.0, "Min avg RTH volume, 10d (millions of shares)", minval = 0, step = 0.5, group = grpL)
 usePmVol  = input.bool(true, "Require minimum pre-market volume", group = grpL)
 minPmVolK = input.float(50, "Min pre-market volume (thousands)", minval = 0, step = 10, group = grpL)
 useMcap   = input.bool(true, "Require minimum market cap", group = grpL)
