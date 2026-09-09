@@ -1,0 +1,164 @@
+//@version=6
+// PM Gapper Scan
+//
+// Pre-market gapper qualifier. All conditions are evaluated live during the
+// pre-market session:
+//
+//   gap        >= +3% from the PRIOR REGULAR SESSION close
+//   price      >  VWAP anchored at the 04:00 pre-market open
+//   price      >  prior day's REGULAR SESSION high
+//   price      >  $1
+//   avg volume >= 1M (10-day, regular session only)
+//
+// Set Direction to "Short" to mirror every condition: gap <= -3%, price below
+// the pre-market VWAP, price below the prior day's regular session low.
+//
+// The chart MUST have Extended Hours enabled or there is no pre-market to scan.
+
+indicator("PM Gapper Scan", "PM Gap", overlay = true)
+
+if timeframe.isdwm
+    runtime.error("Use an intraday timeframe (1m-5m). The pre-market VWAP does not exist on daily or higher bars.")
+
+// ─────────────────────────────────────────────────────────── Inputs ────────
+grpS = "Setup"
+dirMode = input.string("Long (+3% gap)", "Direction", options = ["Long (+3% gap)", "Short (-3% gap)"], group = grpS)
+gapMin  = input.float(3.0, "Min gap % from prior RTH close", minval = 0, step = 0.5, group = grpS)
+useLevel = input.bool(true, "Require price beyond prior day RTH high / low", group = grpS)
+scanIn   = input.string("Pre-market only", "Evaluate during", options = ["Pre-market only", "Pre-market and RTH"], group = grpS)
+
+grpL = "Liquidity"
+minPrice  = input.float(1.0, "Min price ($)", minval = 0, step = 0.5, group = grpL)
+minAvgVolM = input.float(1.0, "Min avg RTH volume, 10d ($M shares)", minval = 0, step = 0.5, group = grpL)
+usePmVol  = input.bool(true, "Require minimum pre-market volume", group = grpL)
+minPmVolK = input.float(50, "Min pre-market volume (thousands)", minval = 0, step = 10, group = grpL)
+useMcap   = input.bool(false, "Require minimum market cap", group = grpL)
+minMcapM  = input.float(500, "Min market cap ($M)", minval = 0, step = 50, group = grpL)
+
+grpD = "Display"
+showLevels = input.bool(true, "Draw prior day levels", group = grpD)
+showTable  = input.bool(true, "Show condition table", group = grpD)
+
+bool isLong = dirMode == "Long (+3% gap)"
+
+// ──────────────────────────────────────────────────────────── Session ─────
+bool inPM   = session.ispremarket
+bool inRTH  = session.ismarket
+bool active = scanIn == "Pre-market only" ? inPM : (inPM or inRTH)
+bool newDay = timeframe.change("D")
+bool newPM  = inPM and (nz(inPM[1] ? 1 : 0, 0) == 0 or newDay)
+
+// ────────────────────────────────────── VWAP anchored at the 04:00 open ────
+// Keeps accumulating into RTH so the 04:00 anchor survives the opening bell.
+var float cumPV   = na
+var float cumVol  = na
+var float pmVolume = na
+var int   anchorT = na
+if newPM
+    cumPV    := 0.0
+    cumVol   := 0.0
+    pmVolume := 0.0
+    anchorT  := time
+if inPM or inRTH
+    cumPV  := nz(cumPV)  + hlc3 * nz(volume)
+    cumVol := nz(cumVol) + nz(volume)
+if inPM
+    pmVolume := nz(pmVolume) + nz(volume)
+float pmVwap = nz(cumVol, 0) > 0 ? cumPV / cumVol : na
+
+// ───────────────────────────────────────────── Prior regular session ───────
+// Daily bars carry regular-session data, so these are RTH high / low / close.
+float prevClose = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_on)
+float prevHigh  = request.security(syminfo.tickerid, "D", high[1],  lookahead = barmerge.lookahead_on)
+float prevLow   = request.security(syminfo.tickerid, "D", low[1],   lookahead = barmerge.lookahead_on)
+float avgVol    = request.security(syminfo.tickerid, "D", ta.sma(volume, 10)[1], lookahead = barmerge.lookahead_on)
+
+float shares = request.financial(syminfo.tickerid, "TOTAL_SHARES_OUTSTANDING", "FQ", ignore_invalid_symbol = true)
+float mcap   = na(shares) ? na : shares * close
+
+float gapPct = na(prevClose) or prevClose <= 0 ? na : (close - prevClose) / prevClose * 100
+
+// ───────────────────────────────────────────────────────── Conditions ──────
+bool gapOK   = na(gapPct) ? false : isLong ? gapPct >=  gapMin : gapPct <= -gapMin
+bool vwapOK  = na(pmVwap) ? false : isLong ? close  >  pmVwap  : close  <  pmVwap
+bool levelOK = not useLevel ? true :
+               isLong ? (not na(prevHigh) and close > prevHigh) : (not na(prevLow) and close < prevLow)
+bool priceOK = close >= minPrice
+bool avgVolOK = not na(avgVol) and avgVol >= minAvgVolM * 1e6
+bool pmVolOK  = not usePmVol or (not na(pmVolume) and pmVolume >= minPmVolK * 1e3)
+bool mcapOK   = not useMcap or (not na(mcap) and mcap >= minMcapM * 1e6)
+
+bool pass = active and gapOK and vwapOK and levelOK and priceOK and avgVolOK and pmVolOK and mcapOK
+
+var bool fired = false
+if newPM or (newDay and not inPM)
+    fired := false
+bool sig = pass and not fired
+if sig
+    fired := true
+
+// ──────────────────────────────────────────────────────────── Display ──────
+plot(inPM or inRTH ? pmVwap : na, "PM VWAP (04:00)", color.new(color.orange, 0), 2, plot.style_linebr)
+plot(showLevels ? prevHigh  : na, "Prior RTH high",  color.new(color.teal, 20), 1, plot.style_linebr)
+plot(showLevels ? prevLow   : na, "Prior RTH low",   color.new(color.maroon, 20), 1, plot.style_linebr)
+plot(showLevels ? prevClose : na, "Prior RTH close", color.new(color.gray, 40), 1, plot.style_linebr)
+
+bgcolor(pass ? color.new(isLong ? color.lime : color.red, 88) : na, title = "All conditions met")
+plotshape(sig, "Qualified", isLong ? shape.labelup : shape.labeldown,
+  isLong ? location.belowbar : location.abovebar,
+  isLong ? color.new(color.lime, 0) : color.new(color.red, 0),
+  text = "GAP", textcolor = isLong ? color.black : color.white, size = size.small)
+
+// Pine Screener / data-window columns
+plot(gapPct,                             "Gap %",        display = display.data_window)
+plot(na(pmVwap) ? na : close - pmVwap,   "Price - VWAP", display = display.data_window)
+plot(na(pmVolume) ? na : pmVolume / 1e3, "PM vol (K)",   display = display.data_window)
+plot(na(avgVol) ? na : avgVol / 1e6,     "Avg vol (M)",  display = display.data_window)
+plot(pass ? 1 : 0,                       "Qualified",    display = display.data_window)
+
+// ────────────────────────────────────────────────────────── Alerting ───────
+alertcondition(sig, "PM gapper qualified", "Gap, VWAP and prior-day level conditions all met in the pre-market")
+
+if sig
+    alert(str.format("{0} {1} GAP QUALIFIED | gap {2,number,#.##}% | {3} VWAP {4,number,#.####} | prior RTH {5} {6,number,#.####} | PM vol {7,number,#}K",
+      syminfo.ticker, isLong ? "LONG" : "SHORT", gapPct, isLong ? "above" : "below", pmVwap,
+      isLong ? "high" : "low", isLong ? prevHigh : prevLow, nz(pmVolume) / 1e3),
+      alert.freq_once_per_bar_close)
+
+// ─────────────────────────────────────────────────────── Condition table ───
+f_mark(bool ok) => ok ? "PASS" : "fail"
+f_col(bool ok)  => ok ? color.lime : color.gray
+
+var table t = table.new(position.top_right, 3, 8, border_width = 1)
+if showTable and barstate.islast
+    table.cell(t, 0, 0, "Anchor",  text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 0, na(anchorT) ? "n/a" : str.format_time(anchorT, "HH:mm", syminfo.timezone), text_size = size.small)
+    table.cell(t, 2, 0, inPM ? "PM" : inRTH ? "RTH" : "closed", text_color = active ? color.lime : color.gray, text_size = size.small)
+
+    table.cell(t, 0, 1, "Gap %",   text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 1, na(gapPct) ? "n/a" : str.tostring(gapPct, "#.##"), text_size = size.small)
+    table.cell(t, 2, 1, f_mark(gapOK), text_color = f_col(gapOK), text_size = size.small)
+
+    table.cell(t, 0, 2, "PM VWAP", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 2, na(pmVwap) ? "n/a" : str.tostring(pmVwap, format.mintick), text_size = size.small)
+    table.cell(t, 2, 2, f_mark(vwapOK), text_color = f_col(vwapOK), text_size = size.small)
+
+    table.cell(t, 0, 3, isLong ? "Prior high" : "Prior low", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 3, na(isLong ? prevHigh : prevLow) ? "n/a" : str.tostring(isLong ? prevHigh : prevLow, format.mintick), text_size = size.small)
+    table.cell(t, 2, 3, f_mark(levelOK), text_color = f_col(levelOK), text_size = size.small)
+
+    table.cell(t, 0, 4, "Price",   text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 4, str.tostring(close, format.mintick), text_size = size.small)
+    table.cell(t, 2, 4, f_mark(priceOK), text_color = f_col(priceOK), text_size = size.small)
+
+    table.cell(t, 0, 5, "Avg vol M", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 5, na(avgVol) ? "n/a" : str.tostring(avgVol / 1e6, "#.#"), text_size = size.small)
+    table.cell(t, 2, 5, f_mark(avgVolOK), text_color = f_col(avgVolOK), text_size = size.small)
+
+    table.cell(t, 0, 6, "PM vol K", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 6, na(pmVolume) ? "n/a" : str.tostring(pmVolume / 1e3, "#"), text_size = size.small)
+    table.cell(t, 2, 6, f_mark(pmVolOK), text_color = f_col(pmVolOK), text_size = size.small)
+
+    table.cell(t, 0, 7, "QUALIFIED", text_color = color.gray, text_size = size.small)
+    table.cell(t, 1, 7, isLong ? "long" : "short", text_size = size.small)
+    table.cell(t, 2, 7, f_mark(pass), text_color = pass ? color.lime : color.red, text_size = size.small)

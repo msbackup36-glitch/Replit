@@ -62,6 +62,33 @@ or QQQ.
 
 Intraday only (1m-15m). Raises a runtime error on daily or higher.
 
+## `pm_gapper_scan.pine` — pre-market gapper qualifier
+
+Evaluated live during the pre-market session:
+
+| Condition | Long | Short |
+|---|---|---|
+| Gap from prior RTH close | >= +3% | <= -3% |
+| Price vs VWAP anchored at the 04:00 PM open | above | below |
+| Price vs prior day RTH high / low | above high | below low |
+| Price | >= $1 | >= $1 |
+| Avg volume, 10d, regular session | >= 1M | >= 1M |
+| Pre-market volume | >= 50K | >= 50K |
+
+Set `Direction` to Short to mirror every condition at once. Requires Extended
+Hours enabled on the chart, and an intraday timeframe.
+
+The condition table lists each test with PASS/fail, so a symbol that does not
+qualify tells you which condition it failed rather than just staying silent.
+
+### Why this is a chart indicator and not a screener
+
+The built-in TradingView screener compares a field to a constant, never to
+another field. `price > VWAP` and `price > prior day high` are both field-to-
+field comparisons, and VWAP is not a built-in screener column at all. So the
+built-in screener does the coarse net it can express (gap %, price, average
+volume, market cap, pre-market volume) and this script applies the rest.
+
 ## `atr_extension_rth.pine` — superseded
 
 Single-stage version that alerted on the extension itself, RTH-anchored VWAP,
