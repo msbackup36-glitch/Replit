@@ -72,6 +72,7 @@ Evaluated live during the pre-market session:
 | Price vs VWAP anchored at the same 04:00 open | above | below |
 | Price vs prior day RTH high / low | above high | below low |
 | Price | >= $1 | >= $1 |
+| Market cap | >= $500M | >= $500M |
 | Avg volume, 10d, regular session | >= 1M | >= 1M |
 | Pre-market volume | >= 50K | >= 50K |
 

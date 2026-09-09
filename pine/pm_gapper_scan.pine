@@ -8,7 +8,9 @@
 //   price      >  VWAP anchored at the same 04:00 pre-market open
 //   price      >  prior day's REGULAR SESSION high
 //   price      >  $1
+//   market cap >= $500M
 //   avg volume >= 1M (10-day, regular session only)
+//   PM volume  >= 50K
 //
 // Both the move and the VWAP are anchored at the 04:00 open, so last night's
 // after-hours move is excluded by construction.
@@ -35,7 +37,7 @@ minPrice  = input.float(1.0, "Min price ($)", minval = 0, step = 0.5, group = gr
 minAvgVolM = input.float(1.0, "Min avg RTH volume, 10d ($M shares)", minval = 0, step = 0.5, group = grpL)
 usePmVol  = input.bool(true, "Require minimum pre-market volume", group = grpL)
 minPmVolK = input.float(50, "Min pre-market volume (thousands)", minval = 0, step = 10, group = grpL)
-useMcap   = input.bool(false, "Require minimum market cap", group = grpL)
+useMcap   = input.bool(true, "Require minimum market cap", group = grpL)
 minMcapM  = input.float(500, "Min market cap ($M)", minval = 0, step = 50, group = grpL)
 
 grpD = "Display"
