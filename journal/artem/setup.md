@@ -28,15 +28,19 @@ about half, because many trends ran out by late morning. Consider tracking a loo
 
 Based on the Raschke analysis and the first 17 journal charts:
 
-- **Extreme:** HOD/LOD set within roughly the first 15 minutes, and not revisited since.
+- **Extreme:** HOD/LOD set early in the 10-minute window, and not revisited by 09:40.
 - **Structure measured from the bar after the extreme, not from 09:30:** most bars make higher lows (long) or lower highs (short), plus an efficiency ratio (net move / sum of absolute bar moves) above a threshold. Candle colour gets little or no weight.
 - **Close location:** the latest close in the top (long) or bottom (short) part of the range since the extreme.
 - **Range:** between a minimum and a maximum fraction of daily ATR.
 - **Score points (optional):** failed test of the pre-market or prior-day extreme; relative volume at time; relative strength against SPY/QQQ; sector peer also flagged.
-- **Evaluation:** on each 2-minute close from 09:40 to about 10:00; record the first qualifying time. This catches delayed starts (CVS, CME, GME 9/25, NDAQ, PRGO, ABT).
+- **Evaluation:** once, at the 09:40 close, over the first 10 minutes only (agreed 2026-09-28). Delayed starts (CVS, CME, GME 9/25, NDAQ, PRGO, ABT, GME 9/24) are out of scope for this filter; a later "recovery" filter will pick them up.
 - **Profile filters** (market cap, price) in the TradingView screener rather than in Pine.
 
 Decisions still needed before Pine: 2m vs 1m base; hard gates vs a score; chart indicator vs Pine Screener vs multi-symbol scanner; which additions to keep.
+
+## Later: recovery filter (delayed starts)
+
+To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, pop or sideways box.
 
 ## Next filter (first 30 minutes)
 
@@ -63,3 +67,4 @@ Decisions still needed before Pine: 2m vs 1m base; hard gates vs a score; chart 
 ## Changelog
 
 - 2026-09-28: spec created from the Artem Trade Setup document; draft v0.2 added for discussion.
+- 2026-09-28: scope agreed. The initial filter evaluates the first 10 minutes only, at 09:40. Delayed starts move to a later recovery filter.
