@@ -31,28 +31,38 @@ Review later: log good trend stocks that Stage 1 excluded, with the reason, to t
 
 ## Stage 2: first 10 minutes
 
-### Agreed so far
+### Agreed (renumbered 2026-09-28)
+
+"Tolerance" throughout means the larger of $0.01 or 1.5% of the 14-day daily ATR.
+
+**Active filters: all must pass (hard rules).**
 
 | # | Filter | Setting |
 |---|---|---|
 | 2.1 | Base bars | 2-minute bars, regular session only. The 10-minute window is bars 1 to 5 (09:30 to 09:40), evaluated once at the 09:40 close. |
-| 2.2 | Extreme | Long: the regular-session low of the window is set in bar 1 or 2 (the first 4 minutes), and bars 3 to 5 do not trade more than the tolerance below it. Tolerance = the larger of $0.01 or 1.5% of the 14-day daily ATR. Short: mirror image on the high. Pre-market prices are ignored. |
-| 2.3 | Structure | Long: at least 3 of the 4 bar-to-bar comparisons (bar 2 vs 1, 3 vs 2, 4 vs 3, 5 vs 4) make a higher or equal low. Short: higher or equal is replaced by lower or equal highs. Equal means literally equal. Proviso: at most one of the counted comparisons may instead miss by no more than the 2.2 tolerance (the larger of $0.01 or 1.5% of the 14-day ATR). |
-| 2.4 | Candle colour | Not a filter. Record the green (long) or red (short) count and test in the backtest. |
-| 2.5 | Efficiency ratio | ≥ 0.6, where ER = abs(09:40 close − 09:30 open) ÷ the sum of abs(close-to-close moves) over bars 1 to 5, with bar 1 measured from the 09:30 open. |
-| 2.6 | Close location | Long: the 09:40 close is in the top 20% of the 10-minute range. Short: bottom 20%. |
-| 2.7 | Close vs open | Long: the 09:40 close is above the 09:30 open. Short: below. The prior close is not used. |
-| 2.8 | Range | The 10-minute range (high minus low, bars 1 to 5) is between 0.1 and 0.6 × the 14-day daily ATR. |
-| 2.9 | Wicks and bodies | Dropped: shrinking wicks and consistent bodies are not used. |
-| 2.10 | Relative volume at time | Volume in bars 1 to 5 ≥ 1.5 × the average volume of the same 09:30–09:40 window over the prior 10 sessions (lookback is a default, adjustable). |
-| 2.11 | Dollar volume in the window | ≥ $1M traded in bars 1 to 5. |
-| 2.12 | Relative strength vs SPY/QQQ | Not a filter. Record it and test in the backtest. |
-| 2.13 | Failed test of pre-market / prior-day extreme | Not a filter. Record it and test in the backtest. |
-| 2.14 | Gap size (ATR multiple) | Not a filter. Record it and test in the backtest. |
+| 2.2 | Extreme | Long: the regular-session low of the window is set in bar 1 or 2 (the first 4 minutes), and bars 3 to 5 do not trade more than the tolerance below it. Short: mirror image on the high. Pre-market prices are ignored. |
+| 2.3 | Structure | Long: at least 3 of the 4 bar-to-bar comparisons (bar 2 vs 1, 3 vs 2, 4 vs 3, 5 vs 4) make a higher or equal low. Short: lower or equal highs. Equal means literally equal. Proviso: at most one of the counted comparisons may instead miss by no more than the tolerance. |
+| 2.4 | Efficiency ratio | ≥ 0.6, where ER = abs(09:40 close − 09:30 open) ÷ the sum of abs(close-to-close moves) over bars 1 to 5, with bar 1 measured from the 09:30 open. |
+| 2.5 | Close location | Long: the 09:40 close is in the top 20% of the 10-minute range. Short: bottom 20%. |
+| 2.6 | Close vs open | Long: the 09:40 close is above the 09:30 open. Short: below. The prior close is not used. |
+| 2.7 | Range | The 10-minute range (high minus low, bars 1 to 5) is between 0.1 and 0.6 × the 14-day daily ATR. |
+| 2.8 | Relative volume at time | Volume in bars 1 to 5 ≥ 1.5 × the average volume of the same 09:30–09:40 window over the prior 10 sessions (lookback is a default, adjustable). |
+| 2.9 | Dollar volume in the window | ≥ $1M traded in bars 1 to 5. |
 
-**Combining the conditions (agreed 2026-09-28):** version 1 uses hard rules only. A stock triggers only if it passes every agreed filter. Every condition's value and pass/fail is still recorded for every Stage 1 stock, triggered or not, so a score can be tested in the backtest later without re-collecting data. Scoring is in the backlog.
+**Recorded only: not filters; measured for every Stage 1 stock and tested in the backtest.**
 
-All Stage 2 items are now defined.
+| # | Item | What is recorded |
+|---|---|---|
+| 2.R1 | Candle colour | Green (long) or red (short) count out of 5. |
+| 2.R2 | Relative strength vs SPY/QQQ | The stock's 10-minute move against the index's. |
+| 2.R3 | Failed test of pre-market / prior-day extreme | Traded beyond it in the window, then back inside. |
+| 2.R4 | Gap size | Opening gap as a multiple of the 14-day ATR. |
+
+Dropped: shrinking wicks and consistent bodies.
+
+**Combining the conditions (agreed 2026-09-28):** version 1 uses hard rules only. A stock triggers only if it passes every active filter. Every condition's value and pass/fail is still recorded for every Stage 1 stock, triggered or not, so a score can be tested in the backtest later without re-collecting data. Scoring is in the backlog.
+
+Changelog entries dated before the renumbering use the old numbers.
 
 ### As originally drafted
 
@@ -128,3 +138,4 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 2026-09-28: Stage 2 items 2.3 (3 of 4 higher/lower-or-equal), 2.5 (efficiency ratio ≥ 0.6) and 2.7 (beyond the open only) agreed.
 - 2026-09-28: 2.4 candle colour made record-only; 2.3 near-miss proviso added (one comparison may miss by up to the 2.2 tolerance). Stage 2 fully defined.
 - 2026-09-28: 2.3 proviso tolerance confirmed as $0.01 floor (same as 2.2). Provisional implementation plan recorded (Polygon real-time, scans at 09:40/09:50/10:00, email alert).
+- 2026-09-28: Stage 2 renumbered. Active filters are now 2.1 to 2.9 (old 2.5→2.4, 2.6→2.5, 2.7→2.6, 2.8→2.7, 2.10→2.8, 2.11→2.9); recorded-only items are 2.R1 to 2.R4 (old 2.4, 2.12, 2.13, 2.14); old 2.9 dropped.
