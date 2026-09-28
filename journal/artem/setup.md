@@ -36,7 +36,7 @@ Review later: log good trend stocks that Stage 1 excluded, with the reason, to t
 | # | Filter | Setting |
 |---|---|---|
 | 2.1 | Base bars | 2-minute bars, regular session only. The 10-minute window is bars 1 to 5 (09:30 to 09:40), evaluated once at the 09:40 close. |
-| 2.2 | Extreme | Long: the regular-session low of the window is set in bar 1 or 2 (the first 4 minutes), and bars 3 to 5 do not trade more than one tick ($0.01) below it. Short: mirror image on the high. Pre-market prices are ignored. |
+| 2.2 | Extreme | Long: the regular-session low of the window is set in bar 1 or 2 (the first 4 minutes), and bars 3 to 5 do not trade more than the tolerance below it. Tolerance = the larger of $0.01 or 1.5% of the 14-day daily ATR. Short: mirror image on the high. Pre-market prices are ignored. |
 
 ### As originally drafted
 
@@ -98,3 +98,4 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 2026-09-28: scope agreed. The initial filter evaluates the first 10 minutes only, at 09:40. Delayed starts move to a later recovery filter.
 - 2026-09-28: Stage 1 profile filters agreed (1.1 to 1.7). 14-day ATR; price is checked on the prior regular-session close.
 - 2026-09-28: Stage 2 items 2.1 (2-minute bars) and 2.2 (extreme in the first 4 minutes, regular session only, one-tick tolerance) agreed.
+- 2026-09-28: 2.2 tolerance changed from one tick to the larger of $0.01 or 1.5% of the 14-day ATR.
