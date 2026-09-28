@@ -86,6 +86,12 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 3+ five-minute candles in the trend direction in the first 30 minutes.
 - Outside the pre-market and prior-day range: does it matter? Track it as a measurement first.
 
+## Implementation plan (provisional, 2026-09-28)
+
+1. **Data:** most likely a Polygon real-time feed (currently 15-minute delayed, unlimited API calls). The backtest runs on the existing Polygon history first.
+2. **Scan times:** 09:40, 09:50 and 10:00 to start with. Open question: what the 09:50 and 10:00 scans evaluate — a re-check of the 09:30–09:40 signals, a rolling 10-minute window (09:40–09:50, 09:50–10:00), or the recovery filter for delayed starts.
+3. **Output:** an email alert, in the same format as the existing ATRP alert. Need its details (where it runs, a sample email) to match it.
+
 ## For consideration / backtest list
 
 - Expected time of HOD/LOD. Typical number of EMA pullbacks before HOD/LOD and/or the first VWAP pullback.
@@ -121,3 +127,4 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 2026-09-28: version 1 uses hard rules (all filters must pass); all condition results are recorded for later score testing. 10-session RVOL lookback and 2.13 as record-only confirmed.
 - 2026-09-28: Stage 2 items 2.3 (3 of 4 higher/lower-or-equal), 2.5 (efficiency ratio ≥ 0.6) and 2.7 (beyond the open only) agreed.
 - 2026-09-28: 2.4 candle colour made record-only; 2.3 near-miss proviso added (one comparison may miss by up to the 2.2 tolerance). Stage 2 fully defined.
+- 2026-09-28: 2.3 proviso tolerance confirmed as $0.01 floor (same as 2.2). Provisional implementation plan recorded (Polygon real-time, scans at 09:40/09:50/10:00, email alert).
