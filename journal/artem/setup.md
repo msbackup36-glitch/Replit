@@ -37,6 +37,16 @@ Review later: log good trend stocks that Stage 1 excluded, with the reason, to t
 |---|---|---|
 | 2.1 | Base bars | 2-minute bars, regular session only. The 10-minute window is bars 1 to 5 (09:30 to 09:40), evaluated once at the 09:40 close. |
 | 2.2 | Extreme | Long: the regular-session low of the window is set in bar 1 or 2 (the first 4 minutes), and bars 3 to 5 do not trade more than the tolerance below it. Tolerance = the larger of $0.01 or 1.5% of the 14-day daily ATR. Short: mirror image on the high. Pre-market prices are ignored. |
+| 2.6 | Close location | Long: the 09:40 close is in the top 20% of the 10-minute range. Short: bottom 20%. |
+| 2.8 | Range | The 10-minute range (high minus low, bars 1 to 5) is between 0.1 and 0.6 × the 14-day daily ATR. |
+| 2.9 | Wicks and bodies | Dropped: shrinking wicks and consistent bodies are not used. |
+| 2.10 | Relative volume at time | Volume in bars 1 to 5 ≥ 1.5 × the average volume of the same 09:30–09:40 window over the prior 10 sessions (lookback is a default, adjustable). |
+| 2.11 | Dollar volume in the window | ≥ $1M traded in bars 1 to 5. |
+| 2.12 | Relative strength vs SPY/QQQ | Not a filter. Record it and test in the backtest. |
+| 2.13 | Failed test of pre-market / prior-day extreme | Not a filter. Record it and test in the backtest. |
+| 2.14 | Gap size (ATR multiple) | Not a filter. Record it and test in the backtest. |
+
+Still open: 2.3 structure, 2.4 candle colour, 2.5 efficiency ratio, 2.7 close vs open / prior close, and hard gates vs a score.
 
 ### As originally drafted
 
@@ -99,3 +109,4 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 2026-09-28: Stage 1 profile filters agreed (1.1 to 1.7). 14-day ATR; price is checked on the prior regular-session close.
 - 2026-09-28: Stage 2 items 2.1 (2-minute bars) and 2.2 (extreme in the first 4 minutes, regular session only, one-tick tolerance) agreed.
 - 2026-09-28: 2.2 tolerance changed from one tick to the larger of $0.01 or 1.5% of the 14-day ATR.
+- 2026-09-28: Stage 2 items 2.6, 2.8 to 2.11 agreed; 2.12 to 2.14 recorded as test-only measurements.
