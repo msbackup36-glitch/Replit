@@ -46,7 +46,9 @@ Review later: log good trend stocks that Stage 1 excluded, with the reason, to t
 | 2.13 | Failed test of pre-market / prior-day extreme | Not a filter. Record it and test in the backtest. |
 | 2.14 | Gap size (ATR multiple) | Not a filter. Record it and test in the backtest. |
 
-Still open: 2.3 structure, 2.4 candle colour, 2.5 efficiency ratio, 2.7 close vs open / prior close, and hard gates vs a score.
+**Combining the conditions (agreed 2026-09-28):** version 1 uses hard rules only. A stock triggers only if it passes every agreed filter. Every condition's value and pass/fail is still recorded for every Stage 1 stock, triggered or not, so a score can be tested in the backtest later without re-collecting data. Scoring is in the backlog.
+
+Still open: 2.3 structure, 2.4 candle colour, 2.5 efficiency ratio, 2.7 close vs open / prior close.
 
 ### As originally drafted
 
@@ -98,6 +100,8 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 
 ## Backlog
 
+- Test a score in place of hard rules: use the recorded per-condition results to see whether an "N of M conditions" threshold beats all-must-pass.
+
 - Check the journal tickers against Stage 1 (price, market cap, 20-day dollar volume, ATR %) and record any excluded.
 
 - Calibrate the 10-minute thresholds on real bars: export 1-minute CSVs from TradingView (regular hours, the signal day plus about 10 prior days) for the 12 clean drives (9/24: A, ILMN, LLY, EOSE, LRMR, ETSY, FDX, MNST; 9/25: ACAD, FRVO, MGM; 9/23: MCD) and for KO, MSFT, JPM, HD (9/24). Store them in `data/`. Deferred 2026-09-28: tuning will come mainly from live output instead.
@@ -110,3 +114,4 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 2026-09-28: Stage 2 items 2.1 (2-minute bars) and 2.2 (extreme in the first 4 minutes, regular session only, one-tick tolerance) agreed.
 - 2026-09-28: 2.2 tolerance changed from one tick to the larger of $0.01 or 1.5% of the 14-day ATR.
 - 2026-09-28: Stage 2 items 2.6, 2.8 to 2.11 agreed; 2.12 to 2.14 recorded as test-only measurements.
+- 2026-09-28: version 1 uses hard rules (all filters must pass); all condition results are recorded for later score testing. 10-session RVOL lookback and 2.13 as record-only confirmed.
