@@ -64,6 +64,10 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - No buy before 09:40. What extra confirmation? First higher low / lower high on the 1-minute chart?
 - Trailing stop at the prior 2-minute (or 1-minute) low/high. Journal note: that may be tight for a grind; test against trailing below the 13 EMA or the prior 5-minute low.
 
+## Backlog
+
+- Calibrate the 10-minute thresholds on real bars: export 1-minute CSVs from TradingView (regular hours, the signal day plus about 10 prior days) for the 12 clean drives (9/24: A, ILMN, LLY, EOSE, LRMR, ETSY, FDX, MNST; 9/25: ACAD, FRVO, MGM; 9/23: MCD) and for KO, MSFT, JPM, HD (9/24). Store them in `data/`. Deferred 2026-09-28: tuning will come mainly from live output instead.
+
 ## Changelog
 
 - 2026-09-28: spec created from the Artem Trade Setup document; draft v0.2 added for discussion.
