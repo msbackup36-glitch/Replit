@@ -37,7 +37,8 @@ Review later: log good trend stocks that Stage 1 excluded, with the reason, to t
 |---|---|---|
 | 2.1 | Base bars | 2-minute bars, regular session only. The 10-minute window is bars 1 to 5 (09:30 to 09:40), evaluated once at the 09:40 close. |
 | 2.2 | Extreme | Long: the regular-session low of the window is set in bar 1 or 2 (the first 4 minutes), and bars 3 to 5 do not trade more than the tolerance below it. Tolerance = the larger of $0.01 or 1.5% of the 14-day daily ATR. Short: mirror image on the high. Pre-market prices are ignored. |
-| 2.3 | Structure | Long: at least 3 of the 4 bar-to-bar comparisons (bar 2 vs 1, 3 vs 2, 4 vs 3, 5 vs 4) make a higher or equal low. Short: higher or equal is replaced by lower or equal highs. |
+| 2.3 | Structure | Long: at least 3 of the 4 bar-to-bar comparisons (bar 2 vs 1, 3 vs 2, 4 vs 3, 5 vs 4) make a higher or equal low. Short: higher or equal is replaced by lower or equal highs. Equal means literally equal. Proviso: at most one of the counted comparisons may instead miss by no more than the 2.2 tolerance (the larger of $0.01 or 1.5% of the 14-day ATR). |
+| 2.4 | Candle colour | Not a filter. Record the green (long) or red (short) count and test in the backtest. |
 | 2.5 | Efficiency ratio | ≥ 0.6, where ER = abs(09:40 close − 09:30 open) ÷ the sum of abs(close-to-close moves) over bars 1 to 5, with bar 1 measured from the 09:30 open. |
 | 2.6 | Close location | Long: the 09:40 close is in the top 20% of the 10-minute range. Short: bottom 20%. |
 | 2.7 | Close vs open | Long: the 09:40 close is above the 09:30 open. Short: below. The prior close is not used. |
@@ -51,7 +52,7 @@ Review later: log good trend stocks that Stage 1 excluded, with the reason, to t
 
 **Combining the conditions (agreed 2026-09-28):** version 1 uses hard rules only. A stock triggers only if it passes every agreed filter. Every condition's value and pass/fail is still recorded for every Stage 1 stock, triggered or not, so a score can be tested in the backtest later without re-collecting data. Scoring is in the backlog.
 
-Still open: 2.4 candle colour.
+All Stage 2 items are now defined.
 
 ### As originally drafted
 
@@ -119,3 +120,4 @@ To be designed. Catches trends that begin about 09:40 to 10:00, after a flush, p
 - 2026-09-28: Stage 2 items 2.6, 2.8 to 2.11 agreed; 2.12 to 2.14 recorded as test-only measurements.
 - 2026-09-28: version 1 uses hard rules (all filters must pass); all condition results are recorded for later score testing. 10-session RVOL lookback and 2.13 as record-only confirmed.
 - 2026-09-28: Stage 2 items 2.3 (3 of 4 higher/lower-or-equal), 2.5 (efficiency ratio ≥ 0.6) and 2.7 (beyond the open only) agreed.
+- 2026-09-28: 2.4 candle colour made record-only; 2.3 near-miss proviso added (one comparison may miss by up to the 2.2 tolerance). Stage 2 fully defined.
